@@ -252,25 +252,27 @@ RETRY CONSTRAINTS:
     // Dispatch reject memories to Breeth
     const rejectedCandidates = validatedVerdicts.filter(v => v.verdict === 'reject');
     if (rejectedCandidates.length > 0) {
-      const promises = rejectedCandidates.map(async (c) => {
-        try {
-          const memoryParams = rejectMemory(
-            charter,
-            {
-              url: c.sourceUrl,
-              score: c.score,
-              verdict: c.verdict as 'publish' | 'reject',
-              reason: c.reason
-            },
-            c.topic
-          );
-          const success = await breeth.addEpisode(memoryParams);
-          console.log(`[Breeth Reject Memory] Submitted rejected candidate: "${c.topic}". Accepted: ${success}`);
-        } catch (promiseErr) {
-          console.error('[Breeth Reject Memory Error]', promiseErr);
+      const runSequentialRejects = async () => {
+        for (const c of rejectedCandidates) {
+          try {
+            const memoryParams = rejectMemory(
+              charter,
+              {
+                url: c.sourceUrl,
+                score: c.score,
+                verdict: c.verdict as 'publish' | 'reject',
+                reason: c.reason
+              },
+              c.topic
+            );
+            const success = await breeth.addEpisode(memoryParams);
+            console.log(`[Breeth Reject Memory] Submitted rejected candidate: "${c.topic}". Accepted: ${success}`);
+          } catch (promiseErr) {
+            console.error('[Breeth Reject Memory Error]', promiseErr);
+          }
         }
-      });
-      breethRejectsPromise = Promise.allSettled(promises);
+      };
+      breethRejectsPromise = runSequentialRejects();
     }
 
     // ==========================================
