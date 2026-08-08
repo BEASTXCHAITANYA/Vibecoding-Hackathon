@@ -142,6 +142,8 @@ export async function runTick(
         !discoveredUrls.has(v.url) ||
         typeof v.score !== 'number' ||
         !Number.isInteger(v.score) ||
+        v.score < 0 ||
+        v.score > 100 ||
         (v.verdict !== 'publish' && v.verdict !== 'reject') ||
         !v.reason ||
         seenVerdictUrls.has(v.url)

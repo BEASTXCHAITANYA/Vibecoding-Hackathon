@@ -43,7 +43,7 @@ export const judgmentSchema = {
         type: "object",
         properties: {
           url: { type: "string" },
-          score: { type: "integer" },
+          score: { type: "integer", minimum: 0, maximum: 100 },
           verdict: {
             type: "string",
             enum: ["publish", "reject"]
