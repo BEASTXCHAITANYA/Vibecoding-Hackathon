@@ -128,7 +128,7 @@ export async function discover(): Promise<CandidateTopic[]> {
       }
     }
 
-    return merged.slice(0, 12);
+    return merged.slice(0, 8);
   } catch (error) {
     console.error('[Discovery Main Error]', error);
     return [];

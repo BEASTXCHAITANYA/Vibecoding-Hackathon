@@ -1,6 +1,6 @@
 import { db } from './db';
 import { agents, posts, candidates, ticks } from './db/schema';
-import { eq, and, or, lt, isNull, desc, sql } from 'drizzle-orm';
+import { eq, and, or, lt, isNull, desc, sql, inArray } from 'drizzle-orm';
 import { discover } from './discovery';
 import { llmJSON } from './llm';
 import { judgmentSchema, postSchema } from './schemas';
@@ -16,6 +16,7 @@ export interface TickResult {
     | 'judgment_failed'
     | 'composition_failed'
     | 'unknown_agent'
+    | 'duplicate_skipped'
     | 'error';
   postId?: string;
   error?: string;
@@ -77,14 +78,19 @@ export async function runTick(
     // STEP 3 — RECALL
     // ==========================================
     let recentPostTexts: string[] = [];
+    let recentPosts: { text: string; sources: string[] }[] = [];
     try {
       const postsResult = await db
-        .select({ text: posts.text })
+        .select({ text: posts.text, sources: posts.sources })
         .from(posts)
         .where(eq(posts.agentId, agentId))
         .orderBy(desc(posts.createdAt))
         .limit(15);
       recentPostTexts = postsResult.map(p => p.text);
+      recentPosts = postsResult.map(p => ({
+        text: p.text,
+        sources: Array.isArray(p.sources) ? p.sources : []
+      }));
     } catch (recallErr) {
       console.error('[Tick Recall Error]', recallErr);
     }
@@ -104,6 +110,7 @@ export async function runTick(
     const judgmentPrompt = buildJudgementPrompt(charter, candidateInput, recentPostTexts);
 
     let judgmentResult: any;
+    let verdicts: any[] = [];
     try {
       judgmentResult = await llmJSON(
         'You are an editorial assistant conducting topic judgment.',
@@ -112,6 +119,7 @@ export async function runTick(
         'judgment',
         { model: 'gpt-4o-mini', temperature: 0.3 }
       );
+      verdicts = judgmentResult?.verdicts;
     } catch (llmErr: any) {
       console.error('[Tick Judgment LLM Error]', llmErr);
       await db.insert(ticks).values({
@@ -121,13 +129,47 @@ export async function runTick(
       return { status: 'judgment_failed' };
     }
 
-    // --- JUDGMENT VALIDATION ---
-    const verdicts = judgmentResult?.verdicts;
     if (!Array.isArray(verdicts) || verdicts.length !== discoveredCandidates.length) {
-      console.error('[Tick Judgment Validation Error] Verdict count mismatch');
+      console.warn(
+        `[Tick Judgment Mismatch] Expected ${discoveredCandidates.length} verdicts, got ${verdicts?.length || 0}. Retrying once with explicit constraints.`
+      );
+
+      const retryPrompt = `${judgmentPrompt}
+
+RETRY CONSTRAINTS:
+- You must evaluate exactly ${discoveredCandidates.length} candidates.
+- You must return exactly one verdict object for every candidate URL provided.
+- Do not skip any candidate.
+- Do not merge any candidate.
+- Ensure that the array length of "verdicts" is exactly ${discoveredCandidates.length}.`;
+
+      try {
+        judgmentResult = await llmJSON(
+          'You are an editorial assistant conducting topic judgment. You must strictly adhere to the candidate count constraint.',
+          retryPrompt,
+          judgmentSchema,
+          'judgment_retry',
+          { model: 'gpt-4o-mini', temperature: 0.3 }
+        );
+        verdicts = judgmentResult?.verdicts;
+      } catch (llmErr: any) {
+        console.error('[Tick Judgment Retry LLM Error]', llmErr);
+        await db.insert(ticks).values({
+          action: 'judgment_failed',
+          note: `LLM call failed during judgment retry: ${llmErr.message || 'Unknown error'}`
+        });
+        return { status: 'judgment_failed' };
+      }
+    }
+
+    // --- FINAL JUDGMENT VALIDATION ---
+    if (!Array.isArray(verdicts) || verdicts.length !== discoveredCandidates.length) {
+      console.error(
+        `[Tick Judgment Validation Error] Final verdict count mismatch. Expected ${discoveredCandidates.length}, got ${verdicts?.length || 0}`
+      );
       await db.insert(ticks).values({
         action: 'judgment_failed',
-        note: 'Validation failed: Verdict count mismatch or missing verdicts'
+        note: `Validation failed: Verdict count mismatch (${verdicts?.length || 0} vs ${discoveredCandidates.length})`
       });
       return { status: 'judgment_failed' };
     }
@@ -217,6 +259,51 @@ export async function runTick(
 
     const selectedCandidate = sortedQualifiers[0];
     const selectedAngle = judgmentResult.angle || 'An interesting editorial perspective.';
+
+    // --- DETERMINISTIC DUPLICATE-TOPIC BACKSTOP ---
+    const last5Posts = recentPosts.slice(0, 5);
+    const isUrlMatch = last5Posts.some(p => p.sources.includes(selectedCandidate.sourceUrl));
+
+    const normalizeTopic = (title: string): string => {
+      return title
+        .toLowerCase()
+        .replace(/[^\w\s]|_/g, '') // Remove punctuation
+        .replace(/\s+/g, ' ')      // Collapse repeated whitespace
+        .trim();
+    };
+
+    let lastPostTopics: string[] = [];
+    const lastUrls = last5Posts.flatMap(p => p.sources);
+    if (lastUrls.length > 0) {
+      try {
+        const matchedCandidates = await db
+          .select({ topic: candidates.topic })
+          .from(candidates)
+          .where(
+            and(
+              eq(candidates.agentId, agentId),
+              inArray(candidates.sourceUrl, lastUrls)
+            )
+          );
+        lastPostTopics = matchedCandidates.map(c => c.topic);
+      } catch (topicErr) {
+        console.error('[Tick Backstop Recall Error]', topicErr);
+      }
+    }
+
+    const selectedNorm = normalizeTopic(selectedCandidate.topic);
+    const isTitleMatch = lastPostTopics.some(t => normalizeTopic(t) === selectedNorm);
+
+    if (isUrlMatch || isTitleMatch) {
+      console.log(
+        `[Duplicate Backstop Triggered] Skipping publication for duplicate topic: "${selectedCandidate.topic}" (URL: ${selectedCandidate.sourceUrl})`
+      );
+      await db.insert(ticks).values({
+        action: 'duplicate_topic_skipped',
+        note: `Duplicate topic skipped: "${selectedCandidate.topic}" (${selectedCandidate.sourceUrl})`
+      });
+      return { status: 'duplicate_skipped' };
+    }
 
     // ==========================================
     // STEP 7 — COMPOSE
