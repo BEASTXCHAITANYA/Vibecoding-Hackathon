@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCandidates, agentsStore } from '@/lib/store';
+import { getCandidates } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get('agentId');
 
-    if (!agentId || !agentsStore.has(agentId)) {
+    if (!agentId) {
       return NextResponse.json(
         { candidates: [] },
         {
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const candidates = getCandidates(agentId);
+    const candidates = await getCandidates(agentId);
 
     // Sort newest first by seenAt
     const sortedCandidates = [...candidates].sort((a, b) => b.seenAt.localeCompare(a.seenAt));

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getPosts, agentsStore } from '@/lib/store';
+import { getPosts } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get('agentId');
 
-    if (!agentId || !agentsStore.has(agentId)) {
+    if (!agentId) {
       return NextResponse.json(
         { posts: [] },
         {
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const posts = getPosts(agentId);
+    const posts = await getPosts(agentId);
 
     // Sort newest first by createdAt
     const sortedPosts = [...posts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));

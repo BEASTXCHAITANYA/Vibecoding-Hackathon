@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const { name, domain } = parseResult.data.persona;
 
     // Check for existing agent by persona (idempotency check)
-    const existingAgent = findAgentByPersona(name, domain);
+    const existingAgent = await findAgentByPersona(name, domain);
     if (existingAgent) {
       return NextResponse.json(
         { agentId: existingAgent.id },
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const agentId = nanoid();
 
     // Store the agent
-    createAgent(name, domain, agentId);
+    await createAgent(name, domain, agentId);
 
     return NextResponse.json(
       { agentId },
