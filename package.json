@@ -9,7 +9,9 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "demo:tick": "tsx scripts/demo_tick.ts",
+    "demo:reset": "tsx scripts/demo_reset.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
