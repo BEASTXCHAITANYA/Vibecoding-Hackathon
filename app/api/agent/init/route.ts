@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { findAgentByPersona, createAgent, updateAgentCharter } from '@/lib/store';
-import { generateCharter, fallbackCharter } from '@/lib/persona-engine';
+import { generateCharter, fallbackCharter, charterMemories } from '@/lib/persona-engine';
+import { addEpisode } from '@/lib/breeth';
 import { llmJSON } from '@/lib/llm';
 import { charterSchema } from '@/lib/schemas';
 
@@ -66,6 +67,18 @@ export async function POST(request: Request) {
 
         await updateAgentCharter(existingAgent.id, charter);
 
+        // Background Breeth convictions dispatch
+        try {
+          const convictionsMem = charterMemories(charter);
+          convictionsMem.forEach((mem) => {
+            addEpisode(mem).catch((err) => {
+              console.error(`[Breeth Init existingAgent Error] Failed to submit conviction: ${mem.content}`, err);
+            });
+          });
+        } catch (memError) {
+          console.error('[Breeth Init existingAgent Memory Generation Error]', memError);
+        }
+
         return NextResponse.json(
           { agentId: existingAgent.id },
           { headers: { 'Content-Type': 'application/json' } }
@@ -95,6 +108,18 @@ export async function POST(request: Request) {
 
     // Store the agent (database failures will correctly bubble to outer catch and return HTTP 500)
     await createAgent(name, domain, agentId, charter);
+
+    // Background Breeth convictions dispatch
+    try {
+      const convictionsMem = charterMemories(charter);
+      convictionsMem.forEach((mem) => {
+        addEpisode(mem).catch((err) => {
+          console.error(`[Breeth Init newAgent Error] Failed to submit conviction: ${mem.content}`, err);
+        });
+      });
+    } catch (memError) {
+      console.error('[Breeth Init newAgent Memory Generation Error]', memError);
+    }
 
     return NextResponse.json(
       { agentId },

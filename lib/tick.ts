@@ -4,7 +4,8 @@ import { eq, and, or, lt, isNull, desc, sql, inArray } from 'drizzle-orm';
 import { discover } from './discovery';
 import { llmJSON } from './llm';
 import { judgmentSchema, postSchema } from './schemas';
-import { buildJudgementPrompt, buildPostPrompt, fallbackCharter, PersonaCharter } from './persona-engine';
+import { buildJudgementPrompt, buildPostPrompt, fallbackCharter, PersonaCharter, rejectMemory, publishMemory } from './persona-engine';
+import * as breeth from './breeth';
 import { nanoid } from 'nanoid';
 
 export interface TickResult {
@@ -27,6 +28,7 @@ export async function runTick(
   opts?: { force?: boolean }
 ): Promise<TickResult> {
   const isForced = opts?.force === true;
+  let breethRejectsPromise: Promise<any> | null = null;
 
   try {
     // ==========================================
@@ -91,6 +93,25 @@ export async function runTick(
         text: p.text,
         sources: Array.isArray(p.sources) ? p.sources : []
       }));
+
+      // Integrate Breeth memory recall
+      const domainQuery = agent.domain || '';
+      const recentKeywords = recentPosts
+        .slice(0, 3)
+        .map(p => p.text.split(' ').slice(0, 5).join(' '))
+        .join(' ');
+      const breethQuery = `${domainQuery} ${recentKeywords}`.trim();
+      
+      const breethResults = await breeth.search(breethQuery);
+      if (breethResults && Array.isArray(breethResults)) {
+        console.log(`[Breeth Recall] Found ${breethResults.length} memories for query: "${breethQuery}"`);
+        for (const memory of breethResults) {
+          const trimmed = memory.trim();
+          if (trimmed && !recentPostTexts.includes(trimmed)) {
+            recentPostTexts.push(trimmed);
+          }
+        }
+      }
     } catch (recallErr) {
       console.error('[Tick Recall Error]', recallErr);
     }
@@ -227,6 +248,30 @@ RETRY CONSTRAINTS:
     // STEP 5 — PERSIST
     // ==========================================
     await db.insert(candidates).values(validatedVerdicts);
+
+    // Dispatch reject memories to Breeth
+    const rejectedCandidates = validatedVerdicts.filter(v => v.verdict === 'reject');
+    if (rejectedCandidates.length > 0) {
+      const promises = rejectedCandidates.map(async (c) => {
+        try {
+          const memoryParams = rejectMemory(
+            charter,
+            {
+              url: c.sourceUrl,
+              score: c.score,
+              verdict: c.verdict as 'publish' | 'reject',
+              reason: c.reason
+            },
+            c.topic
+          );
+          const success = await breeth.addEpisode(memoryParams);
+          console.log(`[Breeth Reject Memory] Submitted rejected candidate: "${c.topic}". Accepted: ${success}`);
+        } catch (promiseErr) {
+          console.error('[Breeth Reject Memory Error]', promiseErr);
+        }
+      });
+      breethRejectsPromise = Promise.allSettled(promises);
+    }
 
     // ==========================================
     // STEP 6 — DECIDE
@@ -410,6 +455,25 @@ RETRY CONSTRAINTS:
       createdAt: transactionNow
     });
 
+    // Submit publish memory to Breeth strictly after successful Postgres commit
+    try {
+      const chosenCandidate = {
+        title: selectedCandidate.topic,
+        url: selectedCandidate.sourceUrl,
+        source: selectedCandidate.source
+      };
+      const publishMemParams = publishMemory(
+        charter,
+        chosenCandidate,
+        selectedAngle,
+        composedPost.rationale
+      );
+      const success = await breeth.addEpisode(publishMemParams);
+      console.log(`[Breeth Publish Memory] Submitted published candidate: "${selectedCandidate.topic}". Accepted: ${success}`);
+    } catch (publishMemErr) {
+      console.error('[Breeth Publish Memory Error]', publishMemErr);
+    }
+
     // ==========================================
     // STEP 9 — LOG
     // ==========================================
@@ -443,5 +507,9 @@ RETRY CONSTRAINTS:
       status: 'error',
       error: cleanErrorMsg
     };
+  } finally {
+    if (breethRejectsPromise) {
+      await breethRejectsPromise;
+    }
   }
 }
