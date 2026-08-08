@@ -1,0 +1,21 @@
+name: Autonomous Tick
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger production tick
+        env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          AGENT_ID: ${{ secrets.AGENT_ID }}
+        run: |
+          curl --fail-with-body -X POST \
+            "https://vibecoding-hackathon-beastxchaitanyas-projects.vercel.app/api/agent/tick" \
+            -H "Content-Type: application/json" \
+            -H "x-tick-secret: ${TICK_SECRET}" \
+            -d "{\"agentId\":\"${AGENT_ID}\"}"
