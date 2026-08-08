@@ -51,13 +51,16 @@ function extractSearchStrings(jsonrpcResponse: any): string[] | null {
     }
     if (parsed && typeof parsed === 'object') {
       if (Array.isArray(parsed.episodes)) {
-        return parsed.episodes.map((e: any) => typeof e === 'object' && e?.content ? String(e.content) : String(e));
+        return parsed.episodes.map((e: any) =>
+          typeof e === 'object' ? String(e?.fact ?? e?.content ?? JSON.stringify(e)) : String(e));
       }
       if (Array.isArray(parsed.edges)) {
-        return parsed.edges.map((e: any) => typeof e === 'object' && e?.content ? String(e.content) : String(e));
+        return parsed.edges.map((e: any) =>
+          typeof e === 'object' ? String(e?.fact ?? e?.content ?? JSON.stringify(e)) : String(e));
       }
       if (Array.isArray(parsed.results)) {
-        return parsed.results.map((r: any) => typeof r === 'object' && r?.content ? String(r.content) : String(r));
+        return parsed.results.map((r: any) =>
+          typeof r === 'object' ? String(r?.fact ?? r?.content ?? JSON.stringify(r)) : String(r));
       }
     }
   } catch {
