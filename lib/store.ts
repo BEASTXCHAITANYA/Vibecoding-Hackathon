@@ -3,22 +3,36 @@ import { agents, posts, candidates } from './db/schema';
 import { Agent, Post, Candidate } from './types';
 import { eq, and } from 'drizzle-orm';
 
-export async function createAgent(name: string, domain: string, id: string): Promise<Agent> {
+export async function createAgent(
+  name: string,
+  domain: string,
+  id: string,
+  charterJson?: any
+): Promise<Agent> {
   await db.insert(agents).values({
     id,
     name,
     domain,
+    charterJson: charterJson || null,
     createdAt: new Date(),
   });
   return { id, name, domain };
 }
 
-export async function findAgentByPersona(name: string, domain: string): Promise<Agent | undefined> {
+export async function updateAgentCharter(id: string, charterJson: any): Promise<void> {
+  await db
+    .update(agents)
+    .set({ charterJson })
+    .where(eq(agents.id, id));
+}
+
+export async function findAgentByPersona(name: string, domain: string): Promise<any | undefined> {
   const result = await db
     .select({
       id: agents.id,
       name: agents.name,
       domain: agents.domain,
+      charterJson: agents.charterJson,
     })
     .from(agents)
     .where(and(eq(agents.name, name), eq(agents.domain, domain)))

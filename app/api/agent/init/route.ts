@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import { findAgentByPersona, createAgent } from '@/lib/store';
+import { findAgentByPersona, createAgent, updateAgentCharter } from '@/lib/store';
+import { generateCharter, fallbackCharter } from '@/lib/persona-engine';
+import { llmJSON } from '@/lib/llm';
+import { charterSchema } from '@/lib/schemas';
 
 const initSchema = z.object({
   persona: z.object({
@@ -35,23 +38,70 @@ export async function POST(request: Request) {
     // Check for existing agent by persona (idempotency check)
     const existingAgent = await findAgentByPersona(name, domain);
     if (existingAgent) {
-      return NextResponse.json(
-        { agentId: existingAgent.id },
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      if (existingAgent.charterJson) {
+        // Existing agent with non-null charter: DO NOT regenerate, return existing ID
+        return NextResponse.json(
+          { agentId: existingAgent.id },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } else {
+        // Existing agent with null charter: generate once and store
+        let charter: any;
+        try {
+          const llmCallback = async (prompt: string): Promise<string> => {
+            const result = await llmJSON(
+              "You are a schema generator.",
+              prompt,
+              charterSchema,
+              "charter",
+              { model: "gpt-4o", temperature: 0.9 }
+            );
+            return JSON.stringify(result);
+          };
+          charter = await generateCharter({ name, domain }, llmCallback);
+        } catch (openaiError) {
+          console.error("OpenAI charter generation failed, using fallback:", openaiError);
+          charter = fallbackCharter({ name, domain });
+        }
+
+        await updateAgentCharter(existingAgent.id, charter);
+
+        return NextResponse.json(
+          { agentId: existingAgent.id },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    // Generate agentId using nanoid
+    // New agent: generate charter, create agent, and store
     const agentId = nanoid();
+    let charter: any;
+    try {
+      const llmCallback = async (prompt: string): Promise<string> => {
+        const result = await llmJSON(
+          "You are a schema generator.",
+          prompt,
+          charterSchema,
+          "charter",
+          { model: "gpt-4o", temperature: 0.9 }
+        );
+        return JSON.stringify(result);
+      };
+      charter = await generateCharter({ name, domain }, llmCallback);
+    } catch (openaiError) {
+      console.error("OpenAI charter generation failed, using fallback:", openaiError);
+      charter = fallbackCharter({ name, domain });
+    }
 
-    // Store the agent
-    await createAgent(name, domain, agentId);
+    // Store the agent (database failures will correctly bubble to outer catch and return HTTP 500)
+    await createAgent(name, domain, agentId, charter);
 
     return NextResponse.json(
       { agentId },
       { headers: { 'Content-Type': 'application/json' } }
     );
   } catch (error: any) {
+    console.error("Database or runtime error during init:", error);
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 }
