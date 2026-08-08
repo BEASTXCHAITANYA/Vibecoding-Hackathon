@@ -7,6 +7,20 @@ import { addEpisode } from '@/lib/breeth';
 import { llmJSON } from '@/lib/llm';
 import { charterSchema } from '@/lib/schemas';
 
+/** Dispatches conviction memories one at a time — Breeth's endpoint times out under concurrent load. */
+async function dispatchConvictionsSequentially(
+  convictionsMem: ReturnType<typeof charterMemories>
+) {
+  for (const mem of convictionsMem) {
+    try {
+      const success = await addEpisode(mem);
+      console.log(`[Breeth Init] Submitted conviction memory: "${mem.content}". Accepted: ${success}`);
+    } catch (err) {
+      console.error(`[Breeth Init Error] Failed to submit conviction: ${mem.content}`, err);
+    }
+  }
+}
+
 const initSchema = z.object({
   persona: z.object({
     name: z.string(),
@@ -67,13 +81,12 @@ export async function POST(request: Request) {
 
         await updateAgentCharter(existingAgent.id, charter);
 
-        // Background Breeth convictions dispatch
+        // Background Breeth convictions dispatch — sequential among themselves,
+        // not awaited here so it doesn't add Breeth's latency to the response.
         try {
           const convictionsMem = charterMemories(charter);
-          convictionsMem.forEach((mem) => {
-            addEpisode(mem).catch((err) => {
-              console.error(`[Breeth Init existingAgent Error] Failed to submit conviction: ${mem.content}`, err);
-            });
+          dispatchConvictionsSequentially(convictionsMem).catch((err) => {
+            console.error('[Breeth Init existingAgent Dispatch Error]', err);
           });
         } catch (memError) {
           console.error('[Breeth Init existingAgent Memory Generation Error]', memError);
@@ -109,13 +122,12 @@ export async function POST(request: Request) {
     // Store the agent (database failures will correctly bubble to outer catch and return HTTP 500)
     await createAgent(name, domain, agentId, charter);
 
-    // Background Breeth convictions dispatch
+    // Background Breeth convictions dispatch — sequential among themselves,
+    // not awaited here so it doesn't add Breeth's latency to the response.
     try {
       const convictionsMem = charterMemories(charter);
-      convictionsMem.forEach((mem) => {
-        addEpisode(mem).catch((err) => {
-          console.error(`[Breeth Init newAgent Error] Failed to submit conviction: ${mem.content}`, err);
-        });
+      dispatchConvictionsSequentially(convictionsMem).catch((err) => {
+        console.error('[Breeth Init newAgent Dispatch Error]', err);
       });
     } catch (memError) {
       console.error('[Breeth Init newAgent Memory Generation Error]', memError);

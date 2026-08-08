@@ -100,7 +100,7 @@ export async function discover(): Promise<CandidateTopic[]> {
       fromArxiv()
     ]);
 
-    let merged: CandidateTopic[] = [];
+    const merged: CandidateTopic[] = [];
     const hnResult = results[0];
     const arxivResult = results[1];
 
