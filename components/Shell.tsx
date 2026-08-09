@@ -8,7 +8,7 @@ type ShellProps = {
 
 export default function Shell({
   children,
-  agentName = "unnamed agent",
+  agentName = "Agent",
   domain,
 }: ShellProps) {
   return (
