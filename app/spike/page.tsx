@@ -5,6 +5,7 @@ import DecisionStats from "@/components/DecisionStats";
 import { getDecisions } from "@/lib/decisions";
 import { getAgentProfile } from "@/lib/agent";
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 type PageProps = {

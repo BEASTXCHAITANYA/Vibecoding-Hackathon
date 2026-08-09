@@ -6,6 +6,7 @@ import FeedRefresher from "@/components/FeedRefresher";
 import { getFeed } from "@/lib/feed";
 import { getAgentProfile } from "@/lib/agent";
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 type PageProps = {
