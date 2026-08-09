@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { runTick } from '@/lib/tick';
+import { db } from '@/lib/db';
+import { agents } from '@/lib/db/schema';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,40 +26,69 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Parse request body
-    let body: any;
+    // 2. Parse request body (optional)
+    let body: any = {};
     try {
       body = await request.json();
     } catch {
+      // Body is optional or may be empty JSON
+    }
+
+    const force = !!body?.force;
+
+    // 3. Query all agent ids from Postgres
+    let allAgents: { id: string }[] = [];
+    try {
+      allAgents = await db.select({ id: agents.id }).from(agents);
+    } catch (dbErr: any) {
+      console.error('[Tick Route DB Query Error]', dbErr);
       return NextResponse.json(
-        { error: 'Invalid JSON request body' },
-        { status: 400 }
+        {
+          processedCount: 0,
+          results: [],
+          error: 'Database query failed'
+        },
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    const { agentId, force } = body;
-    if (!agentId || typeof agentId !== 'string') {
-      return NextResponse.json(
-        { error: 'Invalid request: agentId is required and must be a string' },
-        { status: 400 }
-      );
+    // 4. Run runTick for each agent sequentially
+    const results: any[] = [];
+    for (const agent of allAgents) {
+      try {
+        const result = await runTick(agent.id, { force });
+        results.push({
+          agentId: agent.id,
+          ...result
+        });
+      } catch (agentError: any) {
+        console.error(`[Tick Route Error for Agent ${agent.id}]`, agentError);
+        results.push({
+          agentId: agent.id,
+          status: 'error',
+          error: agentError?.message || 'Tick failed for agent'
+        });
+      }
     }
-
-    // 3. Trigger runTick
-    // runTick catches all internal errors and returns a response object with a status field,
-    // so we return HTTP 200 containing the run results.
-    const result = await runTick(agentId, { force: !!force });
 
     return NextResponse.json(
-      result,
-      { headers: { 'Content-Type': 'application/json' } }
+      {
+        processedCount: results.length,
+        results
+      },
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
 
   } catch (error: any) {
     console.error('[Tick Route Global Error]', error);
+    // Route must ALWAYS return HTTP 200 overall to schedulers
     return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
+      {
+        processedCount: 0,
+        results: [],
+        error: error?.message || 'Internal Server Error'
+      },
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
