@@ -9,7 +9,7 @@ type ShellProps = {
 export default function Shell({
   children,
   agentName = "unnamed agent",
-  domain = "localhost",
+  domain,
 }: ShellProps) {
   return (
     <div className="min-h-screen" style={{ background: "var(--paper)" }}>
@@ -31,12 +31,14 @@ export default function Shell({
             >
               {agentName}
             </span>
-            <span
-              className="truncate text-xs"
-              style={{ fontFamily: "var(--font-type)", color: "var(--mute)" }}
-            >
-              {domain}
-            </span>
+            {domain ? (
+              <span
+                className="truncate text-xs"
+                style={{ fontFamily: "var(--font-type)", color: "var(--mute)" }}
+              >
+                {domain}
+              </span>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

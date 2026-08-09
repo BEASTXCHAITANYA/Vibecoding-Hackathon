@@ -41,6 +41,20 @@ export async function findAgentByPersona(name: string, domain: string): Promise<
   return result[0];
 }
 
+export async function getAgent(id: string): Promise<Agent | null> {
+  const result = await db
+    .select({
+      id: agents.id,
+      name: agents.name,
+      domain: agents.domain,
+    })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  return result[0] ?? null;
+}
+
 export async function getPosts(agentId: string): Promise<Post[]> {
   const result = await db
     .select({

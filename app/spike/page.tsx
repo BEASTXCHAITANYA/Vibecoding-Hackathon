@@ -3,6 +3,7 @@ import Reveal from "@/components/Reveal";
 import SpikeCard from "@/components/SpikeCard";
 import DecisionStats from "@/components/DecisionStats";
 import { getDecisions } from "@/lib/decisions";
+import { getAgentProfile } from "@/lib/agent";
 
 export const revalidate = 0;
 
@@ -18,7 +19,10 @@ export default async function SpikePage({ searchParams }: PageProps) {
     process.env.NEXT_PUBLIC_DEFAULT_AGENT_ID ??
     "";
 
-  const candidates = await getDecisions(agentId);
+  const [candidates, agent] = await Promise.all([
+    getDecisions(agentId),
+    getAgentProfile(agentId),
+  ]);
 
   // Newest first. Rows with an unparseable seenAt sort last rather than
   // scrambling the order with NaN comparisons.
@@ -33,7 +37,7 @@ export default async function SpikePage({ searchParams }: PageProps) {
     });
 
   return (
-    <Shell agentName={agentId || "agent"} domain="example.com">
+    <Shell agentName={agent?.name} domain={agent?.domain}>
       {/* Masthead block. It carries --paper-2 so the --paper-filled .tear
           below has something to rip an irregular edge out of. */}
       <section

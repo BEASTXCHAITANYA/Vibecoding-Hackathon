@@ -4,6 +4,7 @@ import PostCard from "@/components/PostCard";
 import EmptyState from "@/components/EmptyState";
 import FeedRefresher from "@/components/FeedRefresher";
 import { getFeed } from "@/lib/feed";
+import { getAgentProfile } from "@/lib/agent";
 
 export const revalidate = 0;
 
@@ -19,10 +20,13 @@ export default async function Home({ searchParams }: PageProps) {
     process.env.NEXT_PUBLIC_DEFAULT_AGENT_ID ??
     "";
 
-  const { posts } = await getFeed(agentId);
+  const [{ posts }, agent] = await Promise.all([
+    getFeed(agentId),
+    getAgentProfile(agentId),
+  ]);
 
   return (
-    <Shell agentName={agentId || "agent"} domain="example.com">
+    <Shell agentName={agent?.name} domain={agent?.domain}>
       <FeedRefresher />
 
       {/* Masthead block. It carries --paper-2 so the --paper-filled .tear
