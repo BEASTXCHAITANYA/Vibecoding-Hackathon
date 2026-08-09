@@ -20,3 +20,9 @@ export interface Candidate {
   reason: string; // in the persona's voice, first person
   seenAt: string; // ISO 8601 UTC
 }
+
+export interface Agent {
+  id: string;
+  name: string;
+  domain: string;
+}
