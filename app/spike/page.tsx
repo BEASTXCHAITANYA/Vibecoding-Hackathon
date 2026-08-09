@@ -8,6 +8,8 @@ import { getAgentProfile } from "@/lib/agent";
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+const DEFAULT_AGENT_ID = "BfYde7gpX79dDyVV5YLup";
+
 type PageProps = {
   searchParams: Promise<{ agentId?: string | string[] }>;
 };
@@ -15,10 +17,8 @@ type PageProps = {
 export default async function SpikePage({ searchParams }: PageProps) {
   const params = await searchParams;
   const raw = params.agentId;
-  const agentId =
-    (Array.isArray(raw) ? raw[0] : raw) ??
-    process.env.NEXT_PUBLIC_DEFAULT_AGENT_ID ??
-    "";
+  const rawId = Array.isArray(raw) ? raw[0] : raw;
+  const agentId = rawId || process.env.NEXT_PUBLIC_DEFAULT_AGENT_ID || DEFAULT_AGENT_ID;
 
   const [candidates, agent] = await Promise.all([
     getDecisions(agentId),
