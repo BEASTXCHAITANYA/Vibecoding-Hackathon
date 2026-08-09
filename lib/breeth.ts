@@ -84,7 +84,7 @@ export async function search(query: string): Promise<string[] | null> {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
 
   try {
     const response = await fetch('https://mcp.thebreeth.com/mcp', {
@@ -133,7 +133,7 @@ export async function addEpisode(params: AddEpisodeParams): Promise<boolean> {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
 
   try {
     const response = await fetch('https://mcp.thebreeth.com/mcp', {

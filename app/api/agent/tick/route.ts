@@ -53,11 +53,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Run runTick for each agent sequentially
+    // 4. Pre-fetch shared discovery candidates once for all agents
+    let sharedCandidates: any[] = [];
+    try {
+      const { discover } = await import('@/lib/discovery');
+      sharedCandidates = await discover();
+    } catch (discErr) {
+      console.error('[Tick Route Discovery Error]', discErr);
+    }
+
+    // 5. Run runTick for each agent sequentially
     const results: any[] = [];
     for (const agent of allAgents) {
       try {
-        const result = await runTick(agent.id, { force });
+        const result = await runTick(agent.id, { force, candidates: sharedCandidates });
         results.push({
           agentId: agent.id,
           ...result

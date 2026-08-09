@@ -25,7 +25,7 @@ export interface TickResult {
 
 export async function runTick(
   agentId: string,
-  opts?: { force?: boolean }
+  opts?: { force?: boolean; candidates?: any[] }
 ): Promise<TickResult> {
   const isForced = opts?.force === true;
   let breethRejectsPromise: Promise<any> | null = null;
@@ -67,7 +67,9 @@ export async function runTick(
     // ==========================================
     // STEP 2 — DISCOVER
     // ==========================================
-    const discoveredCandidates = await discover();
+    const discoveredCandidates = (opts?.candidates && opts.candidates.length > 0)
+      ? opts.candidates
+      : await discover();
     if (discoveredCandidates.length === 0) {
       await db.insert(ticks).values({
         action: 'no_candidates',
@@ -249,30 +251,31 @@ RETRY CONSTRAINTS:
     // ==========================================
     await db.insert(candidates).values(validatedVerdicts);
 
-    // Dispatch reject memories to Breeth
+    // Dispatch reject memories to Breeth in parallel
     const rejectedCandidates = validatedVerdicts.filter(v => v.verdict === 'reject');
     if (rejectedCandidates.length > 0) {
-      const runSequentialRejects = async () => {
-        for (const c of rejectedCandidates) {
-          try {
-            const memoryParams = rejectMemory(
-              charter,
-              {
-                url: c.sourceUrl,
-                score: c.score,
-                verdict: c.verdict as 'publish' | 'reject',
-                reason: c.reason
-              },
-              c.topic
-            );
-            const success = await breeth.addEpisode(memoryParams);
-            console.log(`[Breeth Reject Memory] Submitted rejected candidate: "${c.topic}". Accepted: ${success}`);
-          } catch (promiseErr) {
-            console.error('[Breeth Reject Memory Error]', promiseErr);
-          }
+      const runParallelRejects = async () => {
+        try {
+          await Promise.allSettled(
+            rejectedCandidates.map(async (c) => {
+              const memoryParams = rejectMemory(
+                charter,
+                {
+                  url: c.sourceUrl,
+                  score: c.score,
+                  verdict: c.verdict as 'publish' | 'reject',
+                  reason: c.reason
+                },
+                c.topic
+              );
+              return breeth.addEpisode(memoryParams);
+            })
+          );
+        } catch (promiseErr) {
+          console.error('[Breeth Reject Memory Error]', promiseErr);
         }
       };
-      breethRejectsPromise = runSequentialRejects();
+      breethRejectsPromise = runParallelRejects();
     }
 
     // ==========================================
