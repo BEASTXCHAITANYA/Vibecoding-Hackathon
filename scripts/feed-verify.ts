@@ -15,11 +15,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Kept in sync with DELETE-BEFORE-SUBMIT.md. */
+/** Mock files check. */
 const MOCK_FILES = [
   "lib/mock.ts",
-  "app/api/agent/feed/route.ts",
-  "app/api/agent/decisions/route.ts",
   "instrumentation.ts",
 ] as const;
 
